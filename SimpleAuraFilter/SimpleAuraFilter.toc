@@ -1,0 +1,13 @@
+## Interface: 30400
+## Title: SimpleAuraFilter
+## Notes: Filters unimportant Buffs.
+## Author: Vaeyl of Nozdormu
+## Version: 0.4
+## SavedVariables: SimpleAuraFilterDB
+## OptionalDeps: Ace3
+
+embeds.xml
+
+Locale-enUS.lua
+Locale-deDE.lua
+Core.lua
