@@ -1,15 +1,13 @@
 SimpleAuraFilter = LibStub("AceAddon-3.0"):NewAddon("SimpleAuraFilter", "AceConsole-3.0")
-local L = LibStub("AceLocale-3.0"):GetLocale("SimpleAuraFilter")
+
+local GetSpellInfo = GetSpellInfo
+local InCombatLockdown = InCombatLockdown
+local AceGUI = LibStub("AceGUI-3.0")
 
 S = SimpleAuraFilter
 
-SimpleAuraFilter.debug = false
-
-consolidatedBuffs = { };
-
 function SimpleAuraFilter:OnInitialize()
     -- Called when the addon is loaded
-   
 end
 
 
@@ -30,13 +28,12 @@ function SimpleAuraFilter:OnEnable()
 				desc = 'Shows filter list',
 				func = 'OpenMenu',
 			},
-			
---[[			toggle = {
+			custom = {
 				type = 'execute',
-				name = 'Toggle Filter',
-				desc = 'toggles buffs',
-				func = 'ToggleAllBuffs',
-			},--]]
+				name = 'Buff Filter Insert Menu',
+				desc = 'Insert spellname or spellId to hide',
+				func = 'InsertBuffs',
+			},
 		},
 	}
 	
@@ -49,21 +46,8 @@ function SimpleAuraFilter:OnEnable()
 	options.args.profile = LibStub("AceDBOptions-3.0"):GetOptionsTable(self.db)
 	LibStub("AceConfigRegistry-3.0"):RegisterOptionsTable("Simple Aura Filter", options)
 	LibStub("AceConfigDialog-3.0"):AddToBlizOptions("Simple Aura Filter")
-
-
-	
 	
 	self.buffs = {}
-    
-	--Hooking the neccesary functions here
-	
-
-	BuffButton_OnClick = function (button) return SimpleAuraFilter:BuffButton_OnClick(button) end
-	
-	-- Repair damage done by overwriting
-	ConsolidatedBuffs:HookScript("OnUpdate", ConsolidatedBuffs_OnUpdate)
-	ConsolidatedBuffs:HookScript("OnEnter", ConsolidatedBuffs_OnEnter)
-
 	
 	-- Chat Command
 	LibStub("AceConfig-3.0"):RegisterOptionsTable("SimpleAuraFilter", options, {"saf"})
@@ -72,27 +56,38 @@ end
 function SimpleAuraFilter:HandleProfileChanges()
 	local self = SimpleAuraFilter
 	if not self.db.profile.filters then self.db.profile.filters = {} end
-	BuffFrame_Update()
-	BuffFrame_UpdateAllBuffAnchors()
+	if not InCombatLockdown() then
+		BuffFrame_Update()
+		BuffFrame_UpdateAllBuffAnchors()
+	end
 end
 
 
 -- ********* Hooks
 
-function SimpleAuraFilter:BuffButton_OnClick(button)
-	if IsShiftKeyDown() then
-		name = UnitAura("player", button:GetID(), button.filter)
-		if name then
-			self.db.profile.filters[name] = 1
-			BuffFrame_Update()
-			BuffFrame_UpdateAllBuffAnchors()
+local function IsBadBuff(buttonName, index, filter)
+	local unit = PlayerFrame.unit
+	local name, _, count, _, duration  = UnitAura(unit, index, filter);
+
+	local buffName = buttonName..index
+	local buff = _G[buffName]
+
+	if name then
+		if SimpleAuraFilter.db.profile.filters[name] then
+			buff.bad = true
+			buff:Hide()
+			buff.duration:Hide()
+			buff.count:Hide()
+		else
+			buff.bad = false
 		end
-	else
-		CancelUnitBuff(button.unit, button:GetID(), button.filter);
 	end
+	return 1
 end
 
-local function BuffFrame_UpdateAllBuffAnchors()
+hooksecurefunc("AuraButton_Update", IsBadBuff)
+
+local function New_BuffFrame_UpdateAllBuffAnchors()
 	local buff, previousBuff, aboveBuff, index;
 	local numBuffs = 0;
 	local numAuraRows = 0;
@@ -104,6 +99,7 @@ local function BuffFrame_UpdateAllBuffAnchors()
 	
 	for i = 1, BUFF_ACTUAL_DISPLAY do
 		buff = _G["BuffButton"..i];
+
 		if not buff:IsShown() then
 			hidden = hidden + 1
 			numBuffs = numBuffs + 1;
@@ -150,222 +146,29 @@ local function BuffFrame_UpdateAllBuffAnchors()
 			end
 		end
 	end
-
-	if ( ConsolidatedBuffsTooltip:IsShown() ) then
-		ConsolidatedBuffs_UpdateAllAnchors();
-	end
-
-	-- check if we need to manage frames
-	local bottomEdgeExtent = BUFF_FRAME_BASE_EXTENT;
-	if ( DEBUFF_ACTUAL_DISPLAY > 0 ) then
-		bottomEdgeExtent = bottomEdgeExtent + DebuffButton1.offsetY + BUFF_BUTTON_HEIGHT + ceil(DEBUFF_ACTUAL_DISPLAY / BUFFS_PER_ROW) * (BUFF_BUTTON_HEIGHT + BUFF_ROW_SPACING);
-	else
-		bottomEdgeExtent = bottomEdgeExtent + numAuraRows * (BUFF_BUTTON_HEIGHT + BUFF_ROW_SPACING);
-	end
-	if ( BuffFrame.bottomEdgeExtent ~= bottomEdgeExtent ) then
-		BuffFrame.bottomEdgeExtent = bottomEdgeExtent;
-		UIParent_ManageFramePositions();
-	end
 end
-hooksecurefunc("BuffFrame_UpdateAllBuffAnchors", BuffFrame_UpdateAllBuffAnchors)
-
-local function ConsolidatedBuffs_UpdateAllAnchors()
-	local buff, previousBuff, aboveBuff;
-	local numBuffs = 0;
-	local hidden = 0;
-	local index = 0;
-	
-	for _, buff in pairs(consolidatedBuffs) do
-		numBuffs = numBuffs + 1
-		if ( buff.parent == BuffFrame ) then
-			buff:SetParent(ConsolidatedBuffsContainer);
-			buff.parent = ConsolidatedBuffsContainer;
-		end
-		if not buff:IsShown() then
-			hidden = hidden + 1
-		else
-			index = numBuffs - hidden
-			buff:ClearAllPoints();
-			if ( (index > 1) and (mod(index, CONSOLIDATED_BUFFS_PER_ROW) == 1) ) then
-				-- new row
-				buff:SetPoint("TOP", aboveBuff, "BOTTOM", 0, -BUFF_ROW_SPACING);
-				aboveBuff = buff;
-			elseif ( not previousBuff ) then
-				buff:SetPoint("TOPLEFT", ConsolidatedBuffsContainer, "TOPLEFT", 0, 0);
-				aboveBuff = buff;
-			else
-				buff:SetPoint("LEFT", previousBuff, "RIGHT", 7, 0);
-			end
-			previousBuff = buff;
-		end
-	end
-	ConsolidatedBuffsTooltip:SetWidth(min(index * 24 + 18, 114));
-	ConsolidatedBuffsTooltip:SetHeight(floor((index + 3) / 4 ) * CONSOLIDATED_BUFF_ROW_HEIGHT + 16);
-end
-hooksecurefunc("ConsolidatedBuffs_UpdateAllAnchors", ConsolidatedBuffs_UpdateAllAnchors)
-
-local function AuraButton_Update(buttonName, index, filter)
-	local unit = PlayerFrame.unit;
-	local name, texture, count, debuffType, duration, expirationTime, _, _, _, spellId, _, _, _, _, timeMod, shouldConsolidate = UnitAura(unit, index, filter);
-	local buffName = buttonName..index;
-	local buff = _G[buffName];
-
-	if ( not name ) then
-		-- No buff so hide it if it exists
-		if ( buff ) then
-			buff:Hide();
-			buff.duration:Hide();
-		end
-		return nil;
-	else
-		local helpful = (filter == "HELPFUL" or filter == "HELPFUL");
-
-		-- If button doesn't exist make it
-		if ( not buff ) then
-			if ( helpful ) then
-				buff = CreateFrame("Button", buffName, BuffFrame, "BuffButtonTemplate");
-			else
-				buff = CreateFrame("Button", buffName, BuffFrame, "DebuffButtonTemplate");
-			end
-			buff.parent = BuffFrame;
-		end
-		-- Setup Buff
-		buff:SetID(index);
-		buff.unit = unit;
-		buff.filter = filter;
-		buff:SetAlpha(1.0);
-		buff.exitTime = nil;
-		buff.consolidated = nil;
-		buff:Show();
-		-- Set filter-specific attributes
-		if ( not helpful ) then
-			-- Anchor Debuffs
-			DebuffButton_UpdateAnchors(buttonName, index);
-
-			-- Set color of debuff border based on dispel class.
-			local debuffSlot = _G[buffName.."Border"];
-			if ( debuffSlot ) then
-				local color;
-				if ( debuffType ) then
-					color = DebuffTypeColor[debuffType];
-					if ( ENABLE_COLORBLIND_MODE == "1" ) then
-						buff.symbol:Show();
-						buff.symbol:SetText(DebuffTypeSymbol[debuffType] or "");
-					else
-						buff.symbol:Hide();
-					end
-				else
-					buff.symbol:Hide();
-					color = DebuffTypeColor["none"];
-				end
-				debuffSlot:SetVertexColor(color.r, color.g, color.b);
-			end
-		end
-
-		if ( duration > 0 and expirationTime ) then
-			if ( SHOW_BUFF_DURATIONS == "1" ) then
-				buff.duration:Show();
-			else
-				buff.duration:Hide();
-			end
-
-			local timeLeft = (expirationTime - GetTime());
-			if(timeMod > 0) then
-				buff.timeMod = timeMod;
-				timeLeft = timeLeft / timeMod;
-			end
-
-			if ( not buff.timeLeft ) then
-				buff.timeLeft = timeLeft
-				buff:SetScript("OnUpdate", AuraButton_OnUpdate);
-			else
-				buff.timeLeft = timeLeft
-			end
-
-			buff.expirationTime = expirationTime;
-		else
-			buff.duration:Hide();
-			if ( buff.timeLeft ) then
-				buff:SetScript("OnUpdate", nil);
-			end
-			buff.timeLeft = nil;
-		end
-
-		-- Set Texture
-		local icon = _G[buffName.."Icon"];
-		icon:SetTexture(texture);
-
-		-- Set the number of applications of an aura
-		if ( count > 1 ) then
-			buff.count:SetText(count);
-			buff.count:Show();
-		else
-			buff.count:Hide();
-		end
-
-		-- Refresh tooltip
-		if ( GameTooltip:IsOwned(buff) ) then
-			GameTooltip:SetUnitAura(PlayerFrame.unit, index, filter);
-		end
-
-		if ( GetCVarBool("consolidateBuffs") and shouldConsolidate ) then
-			if ( buff.timeLeft and duration > 30 ) then
-				buff.exitTime = expirationTime - max(10, duration / 10);
-			end
-			buff.expirationTime = expirationTime;			
-			buff.consolidated = true;
-			table.insert(consolidatedBuffs, buff);
-		end
-		-- this one is SAF code
-		if SimpleAuraFilter:IsBadBuff(name) then
-			buff.bad = true;
-			buff:Hide();
-			buff.duration:Hide();
-			buff.count:Hide();
-		else
-			buff.bad = false;
-		end
-	end
-	return 1;
-end
-hooksecurefunc("AuraButton_Update", AuraButton_Update)
-		
-function SimpleAuraFilter:IsBadBuff(name)
-	if not self.db.profile.filters then return false end
-	return self.db.profile.filters[name]
-end
-
-
-function SimpleAuraFilter:AllBuffs()
-	return self.allbuffs
-end
-
-function SimpleAuraFilter:ToggleAllBuffs()
-	self.allbuffs = not self.allbuffs
-	if self.allbuffs then self:Print("Filter off") else self:Print("Filter on") end
-	BuffFrame_Update()
-	BuffFrame_UpdateAllBuffAnchors()
-end
-
+hooksecurefunc("BuffFrame_UpdateAllBuffAnchors", New_BuffFrame_UpdateAllBuffAnchors)
 
 function SimpleAuraFilter:OpenMenu()
-	local d = LibStub("AceGUI-3.0"):Create("Frame")
+	local d = AceGUI:Create("Frame")
 	d:SetTitle("Filters")
 	d:SetWidth(400)
 	d:SetHeight(225)
+	d:SetCallback("OnClose", function(widget)  AceGUI:Release(widget) end)
 	d:SetLayout("Fill")
-	local s = LibStub("AceGUI-3.0"):Create("ScrollFrame")
+	local s = AceGUI:Create("ScrollFrame")
 	d:AddChild(s)
 	
 	for name,_ in pairs(self.db.profile.filters) do
-		local temp = LibStub("AceGUI-3.0"):Create("Button")				
+		local temp = AceGUI:Create("Button")				
 		temp:SetText(name)
 		temp:SetCallback("OnClick", function (self, event)
 						SimpleAuraFilter.db.profile.filters[name] = nil
 						d:Hide()
-						BuffFrame_Update()		
-						BuffFrame_UpdateAllBuffAnchors()
-						ConsolidatedBuffs_UpdateAllAnchors()
+						if not InCombatLockdown() then
+							BuffFrame_Update()		
+							BuffFrame_UpdateAllBuffAnchors()
+						end
 						SimpleAuraFilter:OpenMenu()
 						end)
 		s:AddChild(temp)
@@ -373,9 +176,46 @@ function SimpleAuraFilter:OpenMenu()
     d:Show()
 end
 
+function SimpleAuraFilter:InsertBuffs()
+	local spellname, spellid
 
--- ********* Helpers
+	local d = AceGUI:Create("Frame")
+	d:SetTitle("Hide buffs by name or spellID")
+	d:SetWidth(400)
+	d:SetHeight(225)
+	d:SetCallback("OnClose", function(widget)  AceGUI:Release(widget) end)
+	d:SetLayout("Flow")
 
-function SimpleAuraFilter:Debug(...)
-    if self.debug then self:Print(...) end
+	local editbox = AceGUI:Create("EditBox")
+	editbox:SetLabel("Insert spell name:")
+	editbox:SetWidth(200)
+	editbox:SetCallback("OnEnterPressed", function(widget, event, text) spellname = text end)
+	d:AddChild(editbox)
+
+	local seditbox = AceGUI:Create("EditBox")
+	seditbox:SetLabel("Insert spell ID:")
+	seditbox:SetWidth(200)
+	seditbox:SetCallback("OnEnterPressed", function(widget, event, text) spellid = GetSpellInfo(text) end)
+	d:AddChild(seditbox)
+
+	local button = AceGUI:Create("Button")
+	button:SetText("Hide it!")
+	button:SetWidth(200)
+	button:SetCallback("OnClick", function() 
+		if spellname then
+			self.db.profile.filters[spellname] = spellname
+			if not InCombatLockdown() then
+				BuffFrame_Update()		
+				BuffFrame_UpdateAllBuffAnchors()
+			end
+		end
+		if spellid then
+			self.db.profile.filters[spellid] = spellid
+			if not InCombatLockdown() then
+				BuffFrame_Update()		
+				BuffFrame_UpdateAllBuffAnchors()
+			end
+		end
+	 end)
+	d:AddChild(button)
 end

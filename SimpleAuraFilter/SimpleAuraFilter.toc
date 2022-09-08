@@ -8,6 +8,4 @@
 
 embeds.xml
 
-Locale-enUS.lua
-Locale-deDE.lua
 Core.lua
