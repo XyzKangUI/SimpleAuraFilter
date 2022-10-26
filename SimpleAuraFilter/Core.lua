@@ -2,6 +2,9 @@ local SimpleAuraFilter = LibStub("AceAddon-3.0"):NewAddon("SimpleAuraFilter", "A
 
 local GetSpellInfo = GetSpellInfo
 local AceGUI = LibStub("AceGUI-3.0")
+local ceil = math.ceil
+local buffXInterval = TempEnchant1:GetWidth() + 6
+local UnitAura = UnitAura
 
 function SimpleAuraFilter:OnInitialize()
     -- Called when the addon is loaded
@@ -59,33 +62,9 @@ end
 
 -- ********* Hooks
 
-local function IsBadBuff(buttonName, index, filter)
-    local unit = PlayerFrame.unit
-    local name, _, count, _, duration = UnitAura(unit, index, filter);
-
-    local buffName = buttonName .. index
-    local buff = _G[buffName]
-
-    if name then
-        if SimpleAuraFilter.db.profile.filters[name] then
-            buff.bad = true
-            buff:SetAlpha(0.01)
-            buff.duration:SetAlpha(0.01)
-            buff.count:SetAlpha(0.01)
-        else
-            buff.bad = false
-		buff:SetAlpha(1)
-		buff.duration:SetAlpha(1)
-		buff.count:SetAlpha(1)
-        end
-    end
-    return 1
-end
-
-hooksecurefunc("AuraButton_Update", IsBadBuff)
-
 local function New_BuffFrame_UpdateAllBuffAnchors()
-    local buff, previousBuff, aboveBuff, index;
+    local buff, previousBuff, aboveBuff, index, name;
+    local unit = PlayerFrame.unit;
     local numBuffs = 0;
     local numAuraRows = 0;
     local slack = BuffFrame.numEnchants
@@ -95,9 +74,10 @@ local function New_BuffFrame_UpdateAllBuffAnchors()
 
     for i = 1, BUFF_ACTUAL_DISPLAY do
         buff = _G["BuffButton" .. i];
-
-        if buff:GetAlpha() < 1 then
-            buff:SetPoint("TOPRIGHT", ConsolidatedBuffs, "TOPLEFT", 0, 100);
+        name = UnitAura(unit, i, "HELPFUL");
+        if (SimpleAuraFilter.db.profile.filters[name]) then
+            buff:ClearAllPoints()
+            buff:SetPoint("TOPRIGHT", ConsolidatedBuffs, "TOPLEFT", 0, 10000);
         else
             if (buff.consolidated) then
                 if (buff.parent == BuffFrame) then
@@ -139,10 +119,44 @@ local function New_BuffFrame_UpdateAllBuffAnchors()
                 end
                 previousBuff = buff;
             end
+            if SimpleAuraFilter.db.profile.filters[name] then
+                buff:SetAlpha(0);
+            end
         end
     end
 end
 hooksecurefunc("BuffFrame_UpdateAllBuffAnchors", New_BuffFrame_UpdateAllBuffAnchors)
+
+local function New_DebuffButton_UpdateAnchors(buttonName, index)
+    local NewcolNum
+    local buffName = buttonName .. index;
+    local buff = _G[buffName];
+    local name = UnitAura("player", index, "HARMFUL");
+    local numBuffs = BUFF_ACTUAL_DISPLAY + BuffFrame.numEnchants;
+    if (BuffFrame.numConsolidated > 0) then
+        numBuffs = numBuffs - BuffFrame.numConsolidated + 1;
+    end
+
+    if (SimpleAuraFilter.db.profile.filters[name]) then
+        buff:ClearAllPoints();
+        buff:SetPoint("TOPRIGHT", ConsolidatedBuffs, "TOPLEFT", 0, 10000);
+        buff:SetAlpha(0);
+        return ;
+    end
+
+    NewcolNum = 0;
+    for i = 1, index do
+        if _G["DebuffButton" .. i]:GetAlpha() > 0 then
+            NewcolNum = NewcolNum + 1;
+        end
+    end
+    local rowNum = 3 + ceil(numBuffs / BUFFS_PER_ROW);
+    local colNum = NewcolNum % BUFFS_PER_ROW;
+
+    buff:ClearAllPoints();
+    buff:SetPoint("TOPRIGHT", BuffFrame, "TOPRIGHT", (-(colNum - 1) * buffXInterval), -(rowNum - 1) * (BUFF_ROW_SPACING + BUFF_BUTTON_HEIGHT))
+end
+hooksecurefunc("DebuffButton_UpdateAnchors", New_DebuffButton_UpdateAnchors);
 
 function SimpleAuraFilter:OpenMenu()
     local d = AceGUI:Create("Frame")
@@ -156,7 +170,7 @@ function SimpleAuraFilter:OpenMenu()
     local s = AceGUI:Create("ScrollFrame")
     d:AddChild(s)
 
-    for name, _ in pairs(self.db.profile.filters) do
+    for name, _ in pairs(SimpleAuraFilter.db.profile.filters) do
         local temp = AceGUI:Create("Button")
         temp:SetText(name)
         temp:SetCallback("OnClick", function(self, event)
@@ -202,10 +216,10 @@ function SimpleAuraFilter:InsertBuffs()
     button:SetWidth(200)
     button:SetCallback("OnClick", function()
         if spellname then
-            self.db.profile.filters[spellname] = spellname
+            SimpleAuraFilter.db.profile.filters[spellname] = spellname
         end
         if spellid then
-            self.db.profile.filters[spellid] = spellid
+            SimpleAuraFilter.db.profile.filters[spellid] = spellid
         end
     end)
     d:AddChild(button)
