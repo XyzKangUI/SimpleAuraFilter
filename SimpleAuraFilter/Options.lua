@@ -39,8 +39,6 @@ function SimpleAuraFilter:SetupOptions()
 					  end
 							table.insert(self.db.profile.hiddenBuffs, val);
 					  		table.sort(self.db.profile.hiddenBuffs)
-					  TargetFrame_UpdateAuras(TargetFrame);
-							TargetFrame_UpdateAuras(FocusFrame);
 						end,
 				},
 				buffList = {
